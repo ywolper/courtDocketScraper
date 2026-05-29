@@ -1,0 +1,20 @@
+{
+  "name": "court-case-monitor",
+  "version": "1.0.0",
+  "description": "Monitor Indiana MyCase court case for updates and send email notifications",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": ["court", "monitoring", "mycase", "scheduler"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.44.0",
+    "nodemailer": "^6.9.9",
+    "node-schedule": "^2.1.1",
+    "dotenv": "^16.3.1"
+  }
+}
