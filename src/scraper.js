@@ -5,8 +5,8 @@
 
 const { chromium } = require('playwright');
 
+const MYCASE_SEARCH_URL = 'https://public.courts.in.gov/mycase/#/vw/Search';
 const CASE_SUMMARY_PATH = 'CaseSummary';
-const SEARCH_PATH = 'Search';
 const LOAD_SETTLE_MS = 4000;
 const MAX_ENTRY_LENGTH = 1200;
 
@@ -20,16 +20,136 @@ function normalizeEntryText(text) {
     .trim();
 }
 
+async function firstVisibleLocator(page, locatorFactories, description) {
+  for (const createLocator of locatorFactories) {
+    const locator = createLocator().first();
+    try {
+      await locator.waitFor({ state: 'visible', timeout: 5000 });
+      return locator;
+    } catch (error) {
+      // Try the next selector. MyCase markup changes occasionally.
+    }
+  }
+
+  throw new Error(`${description} missing`);
+}
+
+async function firstEditableLocator(page, locatorFactories, description) {
+  for (const createLocator of locatorFactories) {
+    const locator = createLocator().first();
+    try {
+      await locator.waitFor({ state: 'visible', timeout: 5000 });
+      if (await locator.isEditable()) {
+        return locator;
+      }
+    } catch (error) {
+      // Try the next selector. MyCase markup changes occasionally.
+    }
+  }
+
+  throw new Error(`${description} missing`);
+}
+
+async function openCaseSearch(page) {
+  console.log('Opening search page');
+  await page.goto(MYCASE_SEARCH_URL);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(LOAD_SETTLE_MS);
+  await page.waitForSelector('input, button, [role="tab"]', { state: 'visible' });
+}
+
+async function searchByCaseNumber(page, caseNumber) {
+  console.log(`Searching case: ${caseNumber}`);
+
+  const caseTab = page.getByRole('tab', { name: /case/i }).first();
+  if (await caseTab.isVisible().catch(() => false)) {
+    await caseTab.click();
+    await page.waitForLoadState('networkidle').catch(() => {});
+  }
+
+  const searchInput = await firstEditableLocator(page, [
+    () => page.locator('input[aria-label*="case" i]'),
+    () => page.locator('input[placeholder*="case" i]'),
+    () => page.locator('input[name*="case" i]'),
+    () => page.locator('input[id*="case" i]'),
+    () => page.getByLabel(/^case\s*(number|#)?$/i),
+    () => page.getByPlaceholder(/case\s*(number|#)/i),
+    () => page.locator('input[type="search"]'),
+    () => page.locator('input[type="text"]')
+  ], 'Case number search input');
+
+  await searchInput.fill(caseNumber);
+
+  const searchButton = await firstVisibleLocator(page, [
+    () => page.getByRole('button', { name: /^search$/i }),
+    () => page.getByRole('button', { name: /search/i }),
+    () => page.locator('button[type="submit"]'),
+    () => page.locator('input[type="submit"]'),
+    () => page.locator('button:has-text("Search")')
+  ], 'Search submit button');
+
+  await searchButton.click();
+  await page.waitForLoadState('networkidle');
+}
+
+async function openMatchingCaseResult(page, caseNumber) {
+  const matchingResultRow = page.locator('tr.result-row').filter({ hasText: caseNumber }).first();
+  try {
+    await matchingResultRow.waitFor({ state: 'visible', timeout: 30000 });
+  } catch (error) {
+    throw new Error(`No results found for case number ${caseNumber}`);
+  }
+
+  console.log('Results loaded');
+  console.log(`Opening case: ${caseNumber}`);
+
+  let resultRow = matchingResultRow;
+
+  if (!(await resultRow.isVisible().catch(() => false))) {
+    resultRow = page.locator('li, [role="row"], mat-row, .card, .panel')
+      .filter({ hasText: caseNumber })
+      .first();
+  }
+
+  if (await resultRow.isVisible().catch(() => false)) {
+    await resultRow.locator('a.result-title, a[title*="Chronological Case Summary" i]').first().click();
+  } else {
+    const exactCaseLink = page.locator('a[title*="Chronological Case Summary" i], a.result-title, [role="link"], button')
+      .filter({ hasText: caseNumber })
+      .first();
+
+    if (await exactCaseLink.isVisible().catch(() => false)) {
+      await exactCaseLink.click();
+    } else {
+      throw new Error(`Search results loaded, but no exact case-number match was clickable: ${caseNumber}`);
+    }
+  }
+
+  try {
+    await page.waitForURL((url) => url.href.includes(CASE_SUMMARY_PATH), { timeout: 30000 });
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(LOAD_SETTLE_MS);
+    await page.waitForSelector('table tbody tr, table tr, li, [role="row"]', { state: 'visible' });
+  } catch (error) {
+    throw new Error(`Case summary fails to load for ${caseNumber}. Current URL: ${page.url()}`);
+  }
+
+  console.log('Case summary loaded');
+}
+
 /**
  * Scrapes the MyCase court page for docket entries
  * @param {string} caseNumber - The case number to search for
- * @param {string} caseUrl - Deprecated. The scraper only navigates to process.env.CASE_URL.
  * @returns {Promise<Object>} Object containing case data and latest docket entry
  */
-async function scrapeCaseData(caseNumber, caseUrl) {
+async function scrapeCaseData(caseNumber) {
   let browser;
   
   try {
+    if (!caseNumber) {
+      throw new Error('CASE_NUMBER is not set');
+    }
+
     console.log(`[${new Date().toISOString()}] Starting scrape for case: ${caseNumber}`);
     
     // Launch browser
@@ -39,29 +159,19 @@ async function scrapeCaseData(caseNumber, caseUrl) {
     // Set a reasonable timeout
     page.setDefaultTimeout(30000);
     
-    const caseSummaryUrl = process.env.CASE_URL;
-    if (!caseSummaryUrl) {
-      throw new Error('CASE_URL is not set');
-    }
-    
-    console.log('Navigating to CASE_URL');
-    console.log(`CASE_URL: ${caseSummaryUrl}`);
-    
-    await page.goto(caseSummaryUrl);
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(LOAD_SETTLE_MS);
+    await openCaseSearch(page);
+    await searchByCaseNumber(page, caseNumber);
+    await openMatchingCaseResult(page, caseNumber);
     
     const finalUrl = page.url();
     console.log(`Final URL after load: ${finalUrl}`);
     
-    if (finalUrl.includes(SEARCH_PATH)) {
-      throw new Error(`Expected CaseSummary page but landed on Search page: ${finalUrl}`);
-    }
-    
     if (!finalUrl.includes(CASE_SUMMARY_PATH)) {
-      throw new Error(`Expected CaseSummary page but landed on: ${finalUrl}`);
+      throw new Error(`Case summary fails to load for ${caseNumber}. Current URL: ${finalUrl}`);
     }
     
+    console.log('Scraping docket entries');
+
     // Extract only Chronological Case Summary / docket rows. Do not scrape body text.
     const docketData = await page.evaluate(() => {
       const DATE_RE = /\b(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/(?:19|20)\d{2}\b/;

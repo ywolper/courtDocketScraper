@@ -25,8 +25,7 @@ const CONFIG = {
   emailUser: process.env.EMAIL_USER,
   emailPassword: process.env.EMAIL_PASSWORD,
   recipientEmail: process.env.RECIPIENT_EMAIL,
-  caseNumber: process.env.CASE_NUMBER || '46C01-2511-ES-000237',
-  caseUrl: process.env.CASE_URL || 'https://mycase.in.gov/cases/',
+  caseNumber: process.env.CASE_NUMBER,
   checkInterval: parseInt(process.env.CHECK_INTERVAL) || 6, // hours
   lastUpdateFile: path.join(__dirname, 'lastUpdate.json')
 };
@@ -44,7 +43,7 @@ function validateConfig() {
   console.log('CONFIGURATION CHECK');
   console.log('='.repeat(60));
   
-  const required = ['EMAIL_USER', 'EMAIL_PASSWORD', 'RECIPIENT_EMAIL'];
+  const required = ['EMAIL_USER', 'EMAIL_PASSWORD', 'RECIPIENT_EMAIL', 'CASE_NUMBER'];
   const missing = [];
   
   required.forEach(key => {
@@ -174,7 +173,7 @@ async function performCheck() {
     const previousData = loadLastUpdate();
     
     // Scrape current data
-    const currentData = await scrapeCaseData(CONFIG.caseNumber, CONFIG.caseUrl);
+    const currentData = await scrapeCaseData(CONFIG.caseNumber);
     
     if (!currentData.success) {
       console.error(`✗ Scraping failed: ${currentData.error}`);

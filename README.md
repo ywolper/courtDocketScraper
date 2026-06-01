@@ -12,7 +12,6 @@ RECIPIENT_EMAIL=recipient@example.com
 
 # Case Information
 CASE_NUMBER=46C01-2511-ES-000237
-CASE_URL=https://mycase.in.gov/cases/
 
 # Monitoring
 CHECK_INTERVAL=6
@@ -104,7 +103,6 @@ git push -u origin main
    - `EMAIL_PASSWORD`: your-app-password
    - `RECIPIENT_EMAIL`: recipient@example.com
    - `CASE_NUMBER`: 46C01-2511-ES-000237
-   - `CASE_URL`: https://mycase.in.gov/cases/
    - `CHECK_INTERVAL`: 6
 
 6. Click "Create Background Worker"
