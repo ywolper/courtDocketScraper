@@ -3,12 +3,12 @@
   "caseNumber": "46C01-2511-ES-000237",
   "latestEntry": {
     "index": 41,
-    "text": "05/14/2026\nAutomated ENotice Issued to Parties\nOrder Granting Motion for Continuance ---- 5/13/2026 : James Alan Harris;Patrick Bruce McEuen"
+    "text": "05/19/2026\nCANCELED Hearing\nReason:\nHearing Date to Be Determined\nSession:\n05/19/2026 2:00 PM, Cancelled\nComment:\nTrial on Aperion Care Arbors Claim"
   },
   "totalEntries": 42,
-  "scrapedAt": "2026-06-01T01:00:17.507Z",
+  "scrapedAt": "2026-06-01T04:18:57.953Z",
   "pageTitle": "Summary - MyCase",
-  "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6ImxjekVLZ3NFeElkYlRQekhScFdDM2x0SVhqODcwNkNBdC04VHhzVUdpMncxIn19",
+  "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6IlYtRmlLd3ZwTVNSUHpMV1NUaFdNaEptTmVDUXpPWlNrcDVNd3I4eFVzOUExIn19",
   "allEntries": [
     {
       "index": 0,
@@ -173,6 +173,10 @@
     {
       "index": 40,
       "text": "05/14/2026\nAutomated ENotice Issued to Parties\nOrder Granting Motion for Continuance ---- 5/13/2026 : James Alan Harris;Patrick Bruce McEuen"
+    },
+    {
+      "index": 41,
+      "text": "05/19/2026\nCANCELED Hearing\nReason:\nHearing Date to Be Determined\nSession:\n05/19/2026 2:00 PM, Cancelled\nComment:\nTrial on Aperion Care Arbors Claim"
     }
   ]
 }
