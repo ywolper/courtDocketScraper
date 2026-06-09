@@ -1,114 +1,148 @@
 /**
- * Court Case Monitor - Main Application
- * 
- * This application monitors an Indiana MyCase court case for updates
- * and sends email notifications when new docket entries are found.
- * 
- * Configuration: Create a .env file with your Gmail credentials
- * (See .env.example for template)
+ * Court Case Monitor - One-shot runner
+ *
+ * Designed for GitHub Actions or any cron-style scheduler:
+ * - loads configuration from environment variables
+ * - checks each configured Indiana MyCase case once
+ * - sends email notifications for newly detected docket entries
+ * - writes valid scrape results to lastUpdate.json
+ * - exits 0 on success, 1 on failure
  */
 
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 
-// Import modules
 const { scrapeCaseData } = require('./src/scraper');
 const { sendCaseUpdateEmail } = require('./src/emailService');
-const { scheduleMonitoring, runImmediateCheck } = require('./src/scheduler');
-
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
 
 const CONFIG = {
   emailUser: process.env.EMAIL_USER,
   emailPassword: process.env.EMAIL_PASSWORD,
   recipientEmail: process.env.RECIPIENT_EMAIL,
-  caseNumber: process.env.CASE_NUMBER,
-  checkInterval: parseInt(process.env.CHECK_INTERVAL) || 6, // hours
+  caseNumbers: parseCaseNumbers(process.env.CASE_NUMBERS || process.env.CASE_NUMBER),
   lastUpdateFile: path.join(__dirname, 'lastUpdate.json')
 };
 
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
+function parseCaseNumbers(value) {
+  return (value || '')
+    .split(/[\n,]+/)
+    .map(caseNumber => caseNumber.trim())
+    .filter(Boolean);
+}
 
-/**
- * Validates that all required environment variables are set
- * @returns {boolean} True if all required variables are set
- */
+function maskSecret(value) {
+  if (!value) {
+    return 'NOT SET';
+  }
+
+  if (value.length <= 6) {
+    return '***';
+  }
+
+  return `${value.substring(0, 3)}***${value.substring(value.length - 3)}`;
+}
+
 function validateConfig() {
   console.log('\n' + '='.repeat(60));
   console.log('CONFIGURATION CHECK');
   console.log('='.repeat(60));
-  
-  const required = ['EMAIL_USER', 'EMAIL_PASSWORD', 'RECIPIENT_EMAIL', 'CASE_NUMBER'];
+
   const missing = [];
-  
-  required.forEach(key => {
-    const value = CONFIG[key.toLowerCase()] || process.env[key];
+  const required = {
+    EMAIL_USER: CONFIG.emailUser,
+    EMAIL_PASSWORD: CONFIG.emailPassword,
+    RECIPIENT_EMAIL: CONFIG.recipientEmail
+  };
+
+  Object.entries(required).forEach(([key, value]) => {
     if (!value) {
       missing.push(key);
-      console.log(`✗ ${key}: NOT SET`);
+      console.log(`${key}: NOT SET`);
     } else {
-      const masked = value.substring(0, 3) + '***' + value.substring(value.length - 3);
-      console.log(`✓ ${key}: ${masked}`);
+      console.log(`${key}: ${maskSecret(value)}`);
     }
   });
-  
-  console.log(`✓ Case Number: ${CONFIG.caseNumber}`);
-  console.log(`✓ Check Interval: Every ${CONFIG.checkInterval} hour(s)`);
+
+  if (CONFIG.caseNumbers.length === 0) {
+    missing.push('CASE_NUMBERS or CASE_NUMBER');
+    console.log('CASE_NUMBERS/CASE_NUMBER: NOT SET');
+  } else {
+    console.log(`Case count: ${CONFIG.caseNumbers.length}`);
+    CONFIG.caseNumbers.forEach(caseNumber => console.log(`Case Number: ${caseNumber}`));
+  }
+
   console.log('='.repeat(60) + '\n');
-  
+
   if (missing.length > 0) {
-    console.error(`\n❌ SETUP ERROR: Missing environment variables: ${missing.join(', ')}`);
-    console.error('\nPlease create a .env file with the required variables.');
-    console.error('You can copy from .env.example and fill in your credentials.\n');
+    console.error(`Setup error: Missing environment variables: ${missing.join(', ')}`);
     return false;
   }
-  
+
   return true;
 }
 
-/**
- * Loads the last known update from the tracking file
- * @returns {Object|null} Previous case data or null if no file exists
- */
+function createEmptyState() {
+  return {
+    updatedAt: null,
+    cases: {}
+  };
+}
+
+function normalizeState(data) {
+  if (!data || typeof data !== 'object') {
+    return createEmptyState();
+  }
+
+  if (data.cases && typeof data.cases === 'object') {
+    return {
+      updatedAt: data.updatedAt || null,
+      cases: data.cases
+    };
+  }
+
+  // Backward compatibility with the old single-case lastUpdate.json shape.
+  if (data.caseNumber) {
+    return {
+      updatedAt: data.scrapedAt || null,
+      cases: {
+        [data.caseNumber]: data
+      }
+    };
+  }
+
+  return createEmptyState();
+}
+
 function loadLastUpdate() {
   try {
-    if (fs.existsSync(CONFIG.lastUpdateFile)) {
-      const data = fs.readFileSync(CONFIG.lastUpdateFile, 'utf8');
-      return JSON.parse(data);
+    if (!fs.existsSync(CONFIG.lastUpdateFile)) {
+      return createEmptyState();
     }
+
+    const data = fs.readFileSync(CONFIG.lastUpdateFile, 'utf8');
+    return normalizeState(JSON.parse(data));
   } catch (error) {
     console.warn(`Warning: Could not load last update file: ${error.message}`);
-  }
-  return null;
-}
-
-/**
- * Saves the current case data to the tracking file
- * @param {Object} caseData - Case data to save
- */
-function saveLastUpdate(caseData) {
-  try {
-    fs.writeFileSync(
-      CONFIG.lastUpdateFile,
-      JSON.stringify(caseData, null, 2),
-      'utf8'
-    );
-    console.log(`✓ Tracking file updated: ${CONFIG.lastUpdateFile}`);
-  } catch (error) {
-    console.error(`Error saving tracking file: ${error.message}`);
+    return createEmptyState();
   }
 }
 
-/**
- * Verifies that scraped data is usable as a notification/tracking baseline.
- * @param {Object|null} caseData - Scraped or stored case data
- * @returns {boolean} True when data contains real CaseSummary docket entries
- */
+function saveLastUpdate(state) {
+  const stateToSave = {
+    updatedAt: new Date().toISOString(),
+    cases: state.cases
+  };
+
+  fs.writeFileSync(
+    CONFIG.lastUpdateFile,
+    JSON.stringify(stateToSave, null, 2),
+    'utf8'
+  );
+
+  console.log(`Tracking file updated: ${CONFIG.lastUpdateFile}`);
+}
+
 function isValidCaseData(caseData) {
   if (!caseData || !caseData.success) {
     return false;
@@ -135,136 +169,108 @@ function isValidCaseData(caseData) {
   return hasDate && hasActionText && !isGenericUiText;
 }
 
-/**
- * Detects if there's a new update by comparing current and previous data
- * @param {Object} currentData - Current case data
- * @param {Object} previousData - Previous case data
- * @returns {boolean} True if new update detected
- */
 function isNewUpdate(currentData, previousData) {
-  // No valid previous baseline: save current real docket state without sending.
   if (!isValidCaseData(previousData)) {
     return false;
   }
-  
-  // Compare latest entries
+
   const currentEntry = currentData.latestEntry?.text || '';
   const previousEntry = previousData.latestEntry?.text || '';
-  
+
   return currentEntry !== previousEntry;
 }
 
-// ============================================================================
-// MAIN MONITORING LOGIC
-// ============================================================================
+async function checkCase(caseNumber, previousData) {
+  console.log('\n' + '-'.repeat(60));
+  console.log(`[${new Date().toISOString()}] Checking case ${caseNumber}`);
+  console.log('-'.repeat(60));
 
-/**
- * Performs a single monitoring check
- * - Scrapes the court case page
- * - Compares with last known state
- * - Sends email if updates found
- * - Updates tracking file
- */
-async function performCheck() {
-  console.log(`\n[${new Date().toISOString()}] Starting monitoring check...`);
-  
-  try {
-    // Load previous data
-    const previousData = loadLastUpdate();
-    
-    // Scrape current data
-    const currentData = await scrapeCaseData(CONFIG.caseNumber);
-    
-    if (!currentData.success) {
-      console.error(`✗ Scraping failed: ${currentData.error}`);
-      return;
-    }
+  const currentData = await scrapeCaseData(caseNumber);
 
-    if (!isValidCaseData(currentData)) {
-      console.error('✗ Scraping failed: no valid CaseSummary docket entries were returned');
-      return;
-    }
-    
-    // Check if this is a new update
-    const hasUpdate = isNewUpdate(currentData, previousData);
-    
-    if (hasUpdate) {
-      console.log(`\n🔔 UPDATE DETECTED! New docket entry found.`);
-      console.log(`Latest entry: ${currentData.latestEntry?.text.substring(0, 80)}...`);
-      
-      // Send email notification
-      const emailResult = await sendCaseUpdateEmail(
-        CONFIG.emailUser,
-        CONFIG.emailPassword,
-        CONFIG.recipientEmail,
-        currentData,
-        previousData
-      );
-      
-      if (!emailResult.success) {
-        console.error(`Email notification failed: ${emailResult.error}`);
-      }
-    } else {
-      if (!isValidCaseData(previousData)) {
-        console.log(`✓ Valid docket baseline created. No email sent for initial or repaired baseline.`);
-      } else {
-        console.log(`✓ No new updates. Last entry remains the same.`);
-      }
-      if (currentData.latestEntry) {
-        console.log(`Latest: ${currentData.latestEntry.text.substring(0, 80)}...`);
-      }
-    }
-    
-    // Save current data as the new baseline
-    saveLastUpdate(currentData);
-    
-    console.log(`\n✓ Check completed at ${new Date().toISOString()}`);
-    
-  } catch (error) {
-    console.error(`✗ Error during check: ${error.message}`);
+  if (!currentData.success) {
+    throw new Error(`Scraping failed for ${caseNumber}: ${currentData.error}`);
   }
-}
 
-// ============================================================================
-// APPLICATION STARTUP
-// ============================================================================
+  if (!isValidCaseData(currentData)) {
+    throw new Error(`Scraping failed for ${caseNumber}: no valid CaseSummary docket entries were returned`);
+  }
+
+  const hasUpdate = isNewUpdate(currentData, previousData);
+
+  if (hasUpdate) {
+    console.log(`Update detected for ${caseNumber}`);
+    console.log(`Latest entry: ${currentData.latestEntry.text.substring(0, 120)}...`);
+
+    const emailResult = await sendCaseUpdateEmail(
+      CONFIG.emailUser,
+      CONFIG.emailPassword,
+      CONFIG.recipientEmail,
+      currentData,
+      previousData
+    );
+
+    if (!emailResult.success) {
+      throw new Error(`Email notification failed for ${caseNumber}: ${emailResult.error}`);
+    }
+  } else if (!isValidCaseData(previousData)) {
+    console.log(`Valid docket baseline created for ${caseNumber}. No email sent for initial or repaired baseline.`);
+  } else {
+    console.log(`No new updates for ${caseNumber}.`);
+    console.log(`Latest: ${currentData.latestEntry.text.substring(0, 120)}...`);
+  }
+
+  return currentData;
+}
 
 async function main() {
   console.log('\n' + '='.repeat(60));
-  console.log('COURT CASE MONITOR - Starting Application');
+  console.log('COURT CASE MONITOR - One-shot check');
   console.log('='.repeat(60));
   console.log(`Start time: ${new Date().toISOString()}`);
-  
-  // Validate configuration
+
   if (!validateConfig()) {
-    process.exit(1);
+    return 1;
   }
-  
-  // Run initial check immediately
-  await runImmediateCheck(performCheck);
-  
-  // Schedule recurring checks
-  const scheduler = scheduleMonitoring(CONFIG.checkInterval, performCheck);
-  
-  console.log(`\n${'✓'.repeat(30)}`);
-  console.log('✓ Application is now monitoring the court case');
-  console.log('✓ Press Ctrl+C to stop the application');
-  console.log('✓ Logs will be displayed below as checks run');
-  console.log(`${'✓'.repeat(30)}\n`);
-  
-  // Handle graceful shutdown
-  process.on('SIGINT', () => {
-    console.log('\n\n' + '='.repeat(60));
-    console.log('Shutting down...');
-    scheduler.cancel();
-    console.log('Application stopped');
-    console.log('='.repeat(60));
-    process.exit(0);
-  });
+
+  const state = loadLastUpdate();
+  const failures = [];
+
+  for (const caseNumber of CONFIG.caseNumbers) {
+    try {
+      const previousData = state.cases[caseNumber] || null;
+      const currentData = await checkCase(caseNumber, previousData);
+      state.cases[caseNumber] = currentData;
+    } catch (error) {
+      failures.push({ caseNumber, error });
+      console.error(`Check failed for ${caseNumber}: ${error.message}`);
+    }
+  }
+
+  try {
+    saveLastUpdate(state);
+  } catch (error) {
+    failures.push({ caseNumber: 'lastUpdate.json', error });
+    console.error(`Error saving tracking file: ${error.message}`);
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log(`Finished at ${new Date().toISOString()}`);
+  console.log(`Cases checked: ${CONFIG.caseNumbers.length}`);
+  console.log(`Failures: ${failures.length}`);
+  console.log('='.repeat(60));
+
+  if (failures.length > 0) {
+    return 1;
+  }
+
+  return 0;
 }
 
-// Start the application
-main().catch(error => {
-  console.error(`Fatal error: ${error.message}`);
-  process.exit(1);
-});
+main()
+  .then(exitCode => {
+    process.exit(exitCode);
+  })
+  .catch(error => {
+    console.error(`Fatal error: ${error.message}`);
+    process.exit(1);
+  });

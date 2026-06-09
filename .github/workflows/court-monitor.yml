@@ -1,0 +1,60 @@
+name: Court Monitor
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: court-monitor
+  cancel-in-progress: false
+
+jobs:
+  check-cases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      EMAIL_USER: ${{ secrets.EMAIL_USER }}
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+      RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+      CASE_NUMBERS: ${{ secrets.CASE_NUMBERS }}
+      CASE_NUMBER: ${{ secrets.CASE_NUMBER }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run court monitor
+        run: node index.js
+
+      - name: Commit updated tracking state
+        if: always()
+        run: |
+          if git diff --quiet -- lastUpdate.json; then
+            echo "No lastUpdate.json changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lastUpdate.json
+          git commit -m "Update court monitor state [skip ci]"
+          git push
