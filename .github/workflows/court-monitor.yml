@@ -2,7 +2,7 @@ name: Court Monitor
 
 on:
   schedule:
-    - cron: '* * * * *' # Every minute for testing; change to '0 */6 * * *' for every 6 hours in production
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
