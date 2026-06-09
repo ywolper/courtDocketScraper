@@ -7,7 +7,10 @@ const { chromium } = require('playwright');
 
 const MYCASE_SEARCH_URL = 'https://public.courts.in.gov/mycase/#/vw/Search';
 const CASE_SUMMARY_PATH = 'CaseSummary';
-const LOAD_SETTLE_MS = 4000;
+const PAGE_STABLE_MS = 3000;
+const NAVIGATION_TIMEOUT_MS = 60000;
+const NAVIGATION_RETRIES = 3;
+const NAVIGATION_RETRY_DELAY_MS = 2500;
 const MAX_ENTRY_LENGTH = 1200;
 
 function normalizeEntryText(text) {
@@ -50,12 +53,40 @@ async function firstEditableLocator(page, locatorFactories, description) {
   throw new Error(`${description} missing`);
 }
 
+async function gotoWithRetries(page, url, description) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= NAVIGATION_RETRIES; attempt++) {
+    try {
+      console.log(`${description} navigation attempt ${attempt}/${NAVIGATION_RETRIES}`);
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: NAVIGATION_TIMEOUT_MS
+      });
+      await page.waitForTimeout(PAGE_STABLE_MS);
+      await page.waitForSelector('body', { timeout: NAVIGATION_TIMEOUT_MS });
+      return;
+    } catch (error) {
+      lastError = error;
+      console.warn(`${description} navigation attempt ${attempt} failed: ${error.message}`);
+
+      if (attempt < NAVIGATION_RETRIES) {
+        console.log(`Retrying ${description} navigation in ${NAVIGATION_RETRY_DELAY_MS}ms...`);
+        await page.waitForTimeout(NAVIGATION_RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  throw new Error(`${description} navigation failed after ${NAVIGATION_RETRIES} attempts: ${lastError.message}`);
+}
+
 async function openCaseSearch(page) {
   console.log('Opening search page');
-  await page.goto(MYCASE_SEARCH_URL);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(LOAD_SETTLE_MS);
-  await page.waitForSelector('input, button, [role="tab"]', { state: 'visible' });
+  await gotoWithRetries(page, MYCASE_SEARCH_URL, 'MyCase search page');
+  await page.waitForSelector('input, button, [role="tab"]', {
+    state: 'visible',
+    timeout: NAVIGATION_TIMEOUT_MS
+  });
 }
 
 async function searchByCaseNumber(page, caseNumber) {
@@ -64,7 +95,7 @@ async function searchByCaseNumber(page, caseNumber) {
   const caseTab = page.getByRole('tab', { name: /case/i }).first();
   if (await caseTab.isVisible().catch(() => false)) {
     await caseTab.click();
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(PAGE_STABLE_MS);
   }
 
   const searchInput = await firstEditableLocator(page, [
@@ -89,7 +120,7 @@ async function searchByCaseNumber(page, caseNumber) {
   ], 'Search submit button');
 
   await searchButton.click();
-  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(PAGE_STABLE_MS);
 }
 
 async function openMatchingCaseResult(page, caseNumber) {
@@ -126,10 +157,14 @@ async function openMatchingCaseResult(page, caseNumber) {
   }
 
   try {
-    await page.waitForURL((url) => url.href.includes(CASE_SUMMARY_PATH), { timeout: 30000 });
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(LOAD_SETTLE_MS);
-    await page.waitForSelector('table tbody tr, table tr, li, [role="row"]', { state: 'visible' });
+    await page.waitForURL((url) => url.href.includes(CASE_SUMMARY_PATH), {
+      timeout: NAVIGATION_TIMEOUT_MS
+    });
+    await page.waitForTimeout(PAGE_STABLE_MS);
+    await page.waitForSelector('table tbody tr, table tr, li, [role="row"]', {
+      state: 'visible',
+      timeout: NAVIGATION_TIMEOUT_MS
+    });
   } catch (error) {
     throw new Error(`Case summary fails to load for ${caseNumber}. Current URL: ${page.url()}`);
   }
@@ -157,7 +192,7 @@ async function scrapeCaseData(caseNumber) {
     const page = await browser.newPage();
     
     // Set a reasonable timeout
-    page.setDefaultTimeout(30000);
+    page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
     
     await openCaseSearch(page);
     await searchByCaseNumber(page, caseNumber);
