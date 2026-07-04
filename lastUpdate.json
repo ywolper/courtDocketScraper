@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-07-04T09:55:36.181Z",
+  "updatedAt": "2026-07-04T10:37:20.103Z",
   "cases": {
     "46C01-2511-ES-000237": {
       "success": true,
@@ -9,9 +9,9 @@
         "text": "05/19/2026\nCANCELED Hearing\nReason:\nHearing Date to Be Determined\nSession:\n05/19/2026 2:00 PM, Cancelled\nComment:\nTrial on Aperion Care Arbors Claim"
       },
       "totalEntries": 42,
-      "scrapedAt": "2026-07-04T09:55:36.144Z",
+      "scrapedAt": "2026-07-04T10:37:20.071Z",
       "pageTitle": "Summary - MyCase",
-      "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6IlVyYjFjb0tQajR4cTFxQzhOaVlCeFd3czFYa0taSUlINVVIZWFFM0VDN1kxIn19",
+      "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6IjRwdmZyZ3NjX1hwUGpBb2FMeWszbERpdE83ejR3aElYcU0xQ3Mxa0ZBQ0ExIn19",
       "allEntries": [
         {
           "index": 0,
