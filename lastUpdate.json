@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-14T22:15:07.102Z",
+  "updatedAt": "2026-08-14T22:27:46.623Z",
   "cases": {
     "46C01-2511-ES-000237": {
       "success": true,
@@ -9,9 +9,9 @@
         "text": "07/30/2026\nWithdrawal of Creditor's Claim\nNotice of Withdrawal of Claim\nParty:\nRussell, Ari\nFile Stamp:\n07/29/2026"
       },
       "totalEntries": 43,
-      "scrapedAt": "2026-08-14T22:15:07.068Z",
+      "scrapedAt": "2026-08-14T22:27:46.591Z",
       "pageTitle": "Summary - MyCase",
-      "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6IkQ1cDlYT2ZkSkx0TzRDakxyWmc4RkMtY2lyY3diVG1wbmxmUVB5aWk1OWcxIn19",
+      "pageUrl": "https://public.courts.in.gov/mycase/#/vw/CaseSummary/eyJ2Ijp7IkNhc2VUb2tlbiI6InkxdUItaGVtRXVZNGtlTkhfUnNNYlhxMkxmLWphbE5tS0ZXbDZmbDNCNUkxIn19",
       "allEntries": [
         {
           "index": 0,
